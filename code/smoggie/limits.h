@@ -1,0 +1,18 @@
+#pragma once
+
+#if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3
+	#define LIMIT_GREEN 25 
+	#define LIMIT_YELLOW 70
+#elif DEV_CLASS == SMOGGIE_CO2
+	#define LIMIT_GREEN 1000 
+	#define LIMIT_YELLOW 2000
+#elif DEV_CLASS == SMOGGIE_CH2O
+#elif DEV_CLASS == SMOGGIE_O3
+#elif DEV_CLASS == SMOGGIE_GAS
+#elif DEV_CLASS == SMOGGIE_RADON
+	#define LIMIT_GREEN 100 
+	#define LIMIT_YELLOW 500
+#elif DEV_CLASS == MODEL_NOISE
+  #define LIMIT_GREEN 45
+  #define LIMIT_YELLOW 70  
+#endif
