@@ -11,4 +11,6 @@ Gas: Winsen ZE03
 
 ![alt text](https://www.uradmonitor.com/wp-content/uploads/2021/01/comp_model_SMOGGIE_4_small.jpg)
 
-See also the [uRADMonitor SMOGGIE-PM](https://www.uradmonitor.com/products/#docs-6) product page.
+See also:
+- the [uRADMonitor SMOGGIE-PM](https://www.uradmonitor.com/products/#docs-6) product page, click on tab "Smoggie PM"
+- [Technical Datasheet](https://www.uradmonitor.com/wp-content/uploads/2021/08/datasheet_smoggie_v5_compressed.pdf)
