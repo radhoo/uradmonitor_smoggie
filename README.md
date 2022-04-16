@@ -9,5 +9,6 @@ Gas: Winsen ZE03
 2) Code, Arduino compatible, including local webserver, HTTP Client and all the drivers for the sensors supported
 3) 3d Printable enclosure (Either Filament/FDM or Resin/SLA)
 
-![alt text](https://www.uradmonitor.com/wordpress/wp-content/uploads/2021/01/comp_model_SMOGGIE_4_small.jpg)
+![alt text](https://www.uradmonitor.com/wp-content/uploads/2021/01/comp_model_SMOGGIE_4_small.jpg)
 
+See also the [uRADMonitor SMOGGIE-PM](https://www.uradmonitor.com/products/#docs-6) product page.
