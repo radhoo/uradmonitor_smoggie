@@ -1,27 +1,3 @@
-/**
- *
- *  License:  GPL v3
- *  Project:  SMOGGIE is an ultra-low cost automated air quality monitor with a rain proof enclosure and a simple mount system to make installation easy. 
- *            It features a high quality laser scatering Particulate Matter sensor for PM1, PM2.5 and PM10 and an additional sensor for temperature, pressure and humidity. 
- *            It connects to the internet via Wifi and can be powered by a standard 5V micro-usb cable. Readings are accessed via the uRADMonitor API or decentralized via your local network. This monitor is lab tested for data accuracy.
- *
- *  Copyright 2013-2015 Radu Motisan, radu.motisan@gmail.com
- *  Copyright 2015-2021 Magnasci SRL, www.magnasci.com
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-**/
- 
 #include "uradmonitor.h"
 
 void uradmonitor::init(char *buf, uint16_t len, DataSendCallback pSendFunc) {
@@ -32,26 +8,66 @@ void uradmonitor::init(char *buf, uint16_t len, DataSendCallback pSendFunc) {
 #if DEV_CLASS == MODEL_A3
   p_sserial = new SoftwareSerial(D7, D0 ); // D8 is connected to GND
 #else
-  p_sserial = new SoftwareSerial(D7, D8); //RX, TX
+    p_sserial = new SoftwareSerial(D7, D8); //RX, TX
 #endif  
   
   p_sserial->begin(SENSOR_BAUDRATE);
-  
-  pinMode(D0, OUTPUT); // red led
-  pinMode(D5, OUTPUT); // yellow led
-  pinMode(D6, OUTPUT); // green led
+  pinMode(D0, OUTPUT); // HW4: red led HW5: RGB-BLUE
+  pinMode(D5, OUTPUT); // HW4: yellow led HW5: RGB-RED
+  pinMode(D6, OUTPUT); // HW4: green led HW5: RGB-GREEN
   pinMode(D3, OUTPUT); // speaker
 
-  digitalWrite(D0, 1);
-  digitalWrite(D5, 1);
-  digitalWrite(D6, 1);
   digitalWrite(D3, 0);
-  delay(500);
   
-  digitalWrite(D0, 0);
-  digitalWrite(D5, 0);
-  digitalWrite(D6, 0);
+  #if VER_HW < 5        
+    digitalWrite(D6, HIGH); // green
+    digitalWrite(D5, HIGH); // yellow
+    digitalWrite(D0, HIGH); // red
+    delay(1000);
+    digitalWrite(D6, LOW); // green
+    digitalWrite(D5, LOW); // yellow
+    digitalWrite(D0, LOW); // red
+  #else
+  for (int i = 0; i < 2; i++) {
+    unsigned int rgbColour[3];
+    // Start off with red.
+   rgbColour[0] = 255;
+   rgbColour[1] = 0;
+   rgbColour[2] = 0;  
+   // Choose the colours to increment and decrement.
+   for (int decColour = 0; decColour < 3; decColour += 1) {
+     int incColour = decColour == 2 ? 0 : decColour + 1;
+     // cross-fade the two colours.
+     for(int i = 0; i < 255; i += 1) {
+       rgbColour[decColour] -= 1;
+       rgbColour[incColour] += 1;
+       analogWrite(D5, rgbColour[0]); //red
+       analogWrite(D6, rgbColour[1]); // green
+       analogWrite(D0, rgbColour[2]); //blue
+       delay(2);
+     }
+   }
+  }
+  #endif
+  /*// ukraine flag
+  analogWrite(D5, 0); //red
+  analogWrite(D6, 34); // green
+  analogWrite(D0, 72); //blue
+  delay(1000);
+  analogWrite(D5, 100); //red
+  analogWrite(D6, 84); // green
+  analogWrite(D0, 0); //blue
+  delay(1000);*/
 
+  
+
+#ifdef USE_SHT
+  sht21.start();
+
+  #if defined(USE_BMP)
+    bmp280.start(0x76);
+  #endif          
+#endif
 }
 
 void uradmonitor::setDeviceID(uint32_t devid) {
@@ -92,6 +108,9 @@ char* uradmonitor::getDNSIP() {
 void uradmonitor::enableSensor(bool state) {
   sensorState = state;
   digitalWrite ( BUILTIN_LED, state ); // uses D4
+  #if (VER_HW > 4)
+    digitalWrite( D3, !state);
+  #endif    
 }
 
 void uradmonitor::printIPAddressOfHost(const char* host) {
@@ -138,8 +157,15 @@ void uradmonitor::loadSettings() {
     settings.ownssid[63] = 0;
     
     memset(settings.ownkey, 0, sizeof(settings.ownkey));
+#if DEV_CLASS == SMOGGIE_PM_KIT
+    strcpy(settings.ownkey, "uradmonitor"); // default password in open source variant
+#else    
     sprintf(settings.ownkey, "%08lX", deviceId);
+#endif  
     settings.ownkey[63] = 0;
+
+    strcpy(settings.userid,"1"); settings.userid[63] = 0;
+    strcpy(settings.userkey,"get it in dashboard"); settings.userkey[63] = 0;
     
     memset(settings.server, 0, sizeof(settings.server)); 
     strncpy(settings.server, DEFAULT_SERVER, 64); 
@@ -175,6 +201,7 @@ void uradmonitor::defaultSettings() {
 
 bool uradmonitor::initSensors() {
   pinMode ( BUILTIN_LED, OUTPUT );
+  //pinMode ( D3, OUTPUT );
   enableSensor(0); // turns led on, fan off
   delay(500);
   enableSensor(1); // led off, fan on, sensor on
@@ -250,35 +277,42 @@ void uradmonitor::callback_answer(uint16_t webstatuscode, char *serverAnswer) {
         "}}\r\n",
         settings.ssid, settings.key, settings.userid, settings.userkey, settings.server, settings.script, settings.warmup, settings.sendInt, settings.flag_encrypt, settings.flag_mute, settings.disableap, VER_SW, VER_HW, isConnected()?"connected":"disconnected");
     } else if (strstr(serverAnswer, "\"getdata\"")) {
-      Serial.printf("{\"data\":{\"id\":\"%08lX\"," \
-        "\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%lu,"
-#if DEV_CLASS == SMOGGIE_PM  || DEV_CLASS == MODEL_A3
+      Serial.printf("{\"data\":{\"id\":\"%08lX\","
+#if !(defined(USE_BME) || defined(USE_BMP))
+  "\"temperature\":%.2f,\"humidity\":%.2f,"
+#else      
+  "\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%lu,"
+#endif        
+#if DEV_CLASS == SMOGGIE_PM  || DEV_CLASS == MODEL_A3 || DEV_CLASS == SMOGGIE_PM_KIT
         "\"pm1\":%u,\"pm25\":%u,\"pm10\":%u,"
 #elif DEV_CLASS == SMOGGIE_CO2
         "\"co2\":%u,"
 #elif DEV_CLASS == SMOGGIE_GAS
-      "\"%s\":%.1f,"        
+      "\"%s\":%.1f,"
 #elif DEV_CLASS == SMOGGIE_RADON
-        "\"radon\":%u,"        
+        "\"radon\":%u,"
 #elif DEV_CLASS == SMOGGIE_NOISE        
-        "\"noise\":%.1f," 
+        "\"noise\":%.1f,"
 #endif        
-        "\"uptime\":%lu}}\r\n",
-        
-        getDeviceID(), data.sensorTemperature,  data.sensorHumidity, (uint32_t) data.sensorPressure,
-#if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3  
-        (uint16_t)data.sensorPM1,(uint16_t) data.sensorPM25, (uint16_t)data.sensorPM10,  (uint32_t)(millis() / 1000)
+        "\"valid\":%u,\"uptime\":%lu}}\r\n",
+      getDeviceID(), 
+#if !(defined(USE_BME) || defined(USE_BMP))
+      data.sensorTemperature,  data.sensorHumidity,
+#else        
+      data.sensorTemperature,  data.sensorHumidity, (uint32_t) data.sensorPressure,
+#endif        
+#if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3  || DEV_CLASS == SMOGGIE_PM_KIT
+        (uint16_t)data.sensorPM1,(uint16_t) data.sensorPM25, (uint16_t)data.sensorPM10, 
 #elif DEV_CLASS == SMOGGIE_CO2
-      (uint16_t)data.sensorCO2
+      (uint16_t)data.sensorCO2,
 #elif DEV_CLASS == SMOGGIE_GAS
-      data.getName(), data.getGas()
+      data.getName(), data.getGas(),
 #elif DEV_CLASS == SMOGGIE_RADON
-      (uint16_t)data.sensorRadon
+      (uint16_t)data.sensorRadon,
 #elif DEV_CLASS == MODEL_NOISE
-      data.sensorNoise
+      data.sensorNoise,
 #endif   
-  ,sec             
-        );
+      data.valid, sec);
     } else if (strstr(serverAnswer, "\"getcal\"")) {
         for (uint8_t i = 0; i<CAL_VALUES;i++)
           Serial.printf("%d,%08lX\r\n", i, (uint32_t)settings.cal[i]);
@@ -286,7 +320,7 @@ void uradmonitor::callback_answer(uint16_t webstatuscode, char *serverAnswer) {
       defaultSettings();
       Serial.printf("OK\r\n");
     } 
-#if DEV_CLASS == SMOGGIE_CO2 && SENSOR_CLASS == CM11XX
+#if DEV_CLASS == SMOGGIE_CO2 && (SENSOR == SENSOR_CM1106 || SENSOR == SENSOR_CM1107)
     else if (jsonKeyFind(serverAnswer, "\"calco2\"", "\"", value, 64)) {
       uint16_t conc = atoi(value);
     
@@ -322,6 +356,37 @@ void uradmonitor::addAvg(double *current_avg, uint16_t current_count, double new
 
 double anaoffset = 0xFFFF;
 
+// careful, this needs to work on all variants: PM, CO2, GAS, seeRadon, BUZZ, etc.
+void ledGreen(boolean status) {
+    digitalWrite(D6, status); // green
+    digitalWrite(D5, LOW); // yellow
+    digitalWrite(D0, LOW); // red
+}
+void ledYellow(boolean status) {
+  #if VER_HW < 5              
+    digitalWrite(D6, LOW); // green
+    digitalWrite(D5, status); // yellow
+    digitalWrite(D0, LOW); // red
+  #elif VER_HW == 5
+    analogWrite(D6, 150 * status); // green
+    digitalWrite(D5, status); // red
+    digitalWrite(D0, LOW); // blue
+  #endif
+}
+void ledRed(boolean status) {
+  #if VER_HW < 5
+    digitalWrite(D6, LOW); // green
+    digitalWrite(D5, LOW); // yellow
+    digitalWrite(D0, status); // red
+  #elif VER_HW == 5
+     digitalWrite(D6, LOW); // green
+    digitalWrite(D5, status); // red
+    digitalWrite(D0, LOW); // blue
+  #endif
+}
+        
+
+
 void uradmonitor::callback_second(uint32_t sec) {
   
   
@@ -341,49 +406,122 @@ void uradmonitor::callback_second(uint32_t sec) {
     // read sensors
     if (sec % READ_INTERVAL == 0) {
       uint8_t timeout = 100;
+
+      // assume data is valid
+      data.valid = true;
       
       double t = 0, h = 0, p = 0;
-      do {
-        bme280.start(0x76);
-        bme280.readSensors(&t, &p, &h);
-        timeout --;
-      } while ((timeout > 0) && (t > 100 || h > 100 || h == 0 )); // retry BME if needed. Check for deadlocks on damaged sensor?
+     // do {
+        #if defined(USE_PMS5003T)
+          t = sensor.getTemperature();
+          h = sensor.getHumidity();
+          
+          if (t <= -40 || t >= 125 || h <= 0 || h == 100) data.valid = false;
+          
+          addAvg(&data.sensorTemperature, mvgAvgCnt, calib.calibrate(t, CAL_TEMPERATURE, 0));
+          addAvg(&data.sensorHumidity, mvgAvgCnt, calib.calibrate(h, CAL_HUMIDITY, 1));
+        #elif defined(USE_SHT)
+          t = sht21.getTemperature();  // get temp from SHT 
+          h = sht21.getHumidity(); // get temp from SHT
+        
+          if (t <= -40 || t >= 125 || h <= 0 || h == 100) data.valid = false;  // h -6 means error - open circuit on humidity sensor
+
+          //Serial.printf("SHT %f %f %d\n", t, h , data.valid);
+          
+          addAvg(&data.sensorTemperature, mvgAvgCnt, calib.calibrate(t, CAL_TEMPERATURE, 0));
+          addAvg(&data.sensorHumidity, mvgAvgCnt, calib.calibrate(h, CAL_HUMIDITY, 1));
+
+          #if defined(USE_BMP)
+            bmp280.readSensors(&t, &p);
+            if (p < 30000) data.valid = false;
+            addAvg(&data.sensorPressure, mvgAvgCnt, calib.calibrate(t, CAL_PRESSURE, 0));
+            //Serial.printf("BMP %f %f\n", t, p);
+          #endif
+      
+          
+        #elif defined(USE_BME)
+          bme280.start(0x76);
+          bme280.readSensors(&t, &p, &h);
+
+          if (t <= -40 || t >= 125 || h <= 0 || h == 100 || p == 0) data.valid = false;
+          
+          addAvg(&data.sensorTemperature, mvgAvgCnt, calib.calibrate(t, CAL_TEMPERATURE, 0));
+          addAvg(&data.sensorPressure, mvgAvgCnt, calib.calibrate(p, CAL_PRESSURE, 1));
+          addAvg(&data.sensorHumidity, mvgAvgCnt, calib.calibrate(h, CAL_HUMIDITY, 1));
+        #endif
+        // timeout --;
+      //} while ((timeout > 0) && (t > 100 || h > 100 || h == 0 )); // retry BME if needed. Check for deadlocks on damaged sensor?
      
-      addAvg(&data.sensorTemperature, mvgAvgCnt, calib.calibrate(t, CAL_TEMPERATURE, 0));
-      addAvg(&data.sensorPressure, mvgAvgCnt, calib.calibrate(p, CAL_PRESSURE, 1));
-      addAvg(&data.sensorHumidity, mvgAvgCnt, calib.calibrate(h, CAL_HUMIDITY, 1));
-  
+     
      #if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3
      #ifdef DEBUG
      Serial.printf("# sec:%03d ATM:%03u %03u %03u\n", sec, sensor.getPM1(), sensor.getPM25(), sensor.getPM10());
      #endif
+      
+      if (sensor.getPM25() == 0 || sensor.getPM25() == 1000) data.valid = false;
+      
       // factor is the same for PM1 / PM2.5 / PM10 as all laser sensors use some kind of interpolation in software.
       addAvg(&data.sensorPM1, mvgAvgCnt, calib.calibrate(FACTOR * sensor.getPM1(), CAL_PM1, 1));
       addAvg(&data.sensorPM25, mvgAvgCnt, calib.calibrate(FACTOR * sensor.getPM25(), CAL_PM25, 1));
       addAvg(&data.sensorPM10, mvgAvgCnt, calib.calibrate(FACTOR * sensor.getPM10(), CAL_PM10, 1));
       lastSensorVal = data.sensorPM25;
+     #elif DEV_CLASS == SMOGGIE_PM_KIT
       
-      //chart[CHART_POINTS-1] = data.sensorPM25;
+      if (sensor.getPM25() == 0 || sensor.getPM25() == 1000) data.valid = false;
+     
+        // factor is the same for PM1 / PM2.5 / PM10 as all laser sensors use some kind of interpolation in software.
+      addAvg(&data.sensorPM1, mvgAvgCnt, calib.calibrate(FACTOR * sensor.getPM1(), CAL_PM1, 1));
+      addAvg(&data.sensorPM25, mvgAvgCnt, calib.calibrate(FACTOR * sensor.getPM25(), CAL_PM25, 1));
+      addAvg(&data.sensorPM10, mvgAvgCnt, calib.calibrate(FACTOR * sensor.getPM10(), CAL_PM10, 1));
+      lastSensorVal = data.sensorPM25; 
+      addAvg(&data.pm03no, mvgAvgCnt, sensor.getPM03No());
+      addAvg(&data.pm05no, mvgAvgCnt, sensor.getPM05No());
+      addAvg(&data.pm1no, mvgAvgCnt, sensor.getPM1No());
+      addAvg(&data.pm25no, mvgAvgCnt, sensor.getPM25No());
+      addAvg(&data.pm5no, mvgAvgCnt, sensor.getPM5No());
+      addAvg(&data.pm10no, mvgAvgCnt, sensor.getPM10No());
+      
+
+      #ifdef DEBUG
+       Serial.printf("# sec:%03d ATM:%03u %03u %03u Counts: %03u %03u %03u %03u %03u %03u\n", 
+       sec, sensor.getPM1(), sensor.getPM25(), sensor.getPM10(),
+       sensor.getPM03No(), sensor.getPM05No(), sensor.getPM1No(), sensor.getPM25No(), sensor.getPM5No(), sensor.getPM10No());
+       #endif
+       
     #elif DEV_CLASS == SMOGGIE_CO2
+
+      if (sensor.getCO2() == 0 || sensor.getCO2() == 5000) data.valid = false;
+      
       addAvg(&data.sensorCO2, mvgAvgCnt, calib.calibrate(sensor.getCO2(), CAL_CO2, 1));
       lastSensorVal = data.sensorCO2;
     #elif DEV_CLASS == SMOGGIE_GAS
-      addAvg(&data.sensorGas, mvgAvgCnt, calib.calibrate(sensor.getGas(), CAL_ZE03S1, 1) );
-      data.type = sensor.getType();
-      sensor.getZE03Name(data.name, 10);
+      double gas = sensor.getGas();
+      
+      data.type = sensor.getGasId();
+      sensor.getName(data.name, 10);
       data.sensorVoltage = analogRead(A0) * (3.3 / 1024);
       double ana = sensor.getAnalogueConc(data.sensorVoltage);
       if (ana < anaoffset)
         anaoffset = ana;
       ana -= anaoffset;
+      if (gas < 0.001)
+        gas = ana;
+      if (gas < 0.001)
+        gas = 0.001;
+
+      addAvg(&data.sensorGas, mvgAvgCnt, calib.calibrate(gas, CAL_ZE03S1, 1) );
       
       addAvg(&data.sensorVoltage, mvgAvgCnt, data.sensorVoltage);
       
       lastSensorVal = data.sensorGas;
     #elif DEV_CLASS == SMOGGIE_RADON
+    
+      if (sensor.getRadon() == 0) data.valid = false;
       addAvg(&data.sensorRadon, mvgAvgCnt, sensor.getRadon());
       lastSensorVal = data.sensorRadon;
     #elif DEV_CLASS == MODEL_NOISE      
+      if (sensor.getNoise() == 0) data.valid = false;
+      
       addAvg(&data.sensorNoise, mvgAvgCnt, calib.calibrate(sensor.getNoise(), CAL_NOISE, 1));
       lastSensorVal = data.sensorNoise;
     #endif  
@@ -391,23 +529,56 @@ void uradmonitor::callback_second(uint32_t sec) {
    
       // moving average increment
       mvgAvgCnt ++;
-#if DEV_CLASS != SMOGGIE_GAS // we should implement limits for all gases known
+#if DEV_CLASS == SMOGGIE_GAS // we should implement limits for all gases known
+  if (data.type == H2S) {
+      if (lastSensorVal < 0.01)  // value is in ppm
+        ledGreen(1);
+      else if (lastSensorVal < 1.5) 
+        ledYellow(1);
+      else 
+        ledRed(1);
+  } /*else if (data.type == ZE12_NH3) {
+      if (lastSensorVal < 0.5)  // value is in ppm
+        ledGreen(1);
+      else if (lastSensorVal < 1) 
+        ledYellow(1);
+      else 
+        ledRed(1);
+  } else if (data.type == ZE12_CO) {
+      if (lastSensorVal < 0.5)  // value is in ppm
+        ledGreen(1);
+      else if (lastSensorVal < 2) 
+        ledYellow(1);
+      else 
+        ledRed(1);
+  } else if (data.type == ZE12_NO2) {
+      if (lastSensorVal < 0.1)  // value is in ppm
+        ledGreen(1);
+      else if (lastSensorVal < 0.2) 
+        ledYellow(1);
+      else 
+        ledRed(1);
+  }else if (data.type == O3) {
+      if (lastSensorVal < 0.1)  // value is in ppm
+        ledGreen(1);
+      else if (lastSensorVal < 0.2) 
+        ledYellow(1);
+      else 
+        ledRed(1);
+  }*/
+  else
+        ledGreen(sec % 2); // green
+    
+  
+#else
     // use leds to show limits
      if (lastSensorVal < LIMIT_GREEN) { 
-        digitalWrite(D6, HIGH); // green
-        digitalWrite(D5, LOW); // yellow
-        digitalWrite(D0, LOW); // red
+        ledGreen(1);
       } else if (lastSensorVal < LIMIT_YELLOW) {
-        digitalWrite(D6, LOW); // green
-        digitalWrite(D5, HIGH); // yellow
-        digitalWrite(D0, LOW); // red
+        ledYellow(1);
       } else {
-        digitalWrite(D6, LOW); // green
-        digitalWrite(D5, LOW); // yellow
-        digitalWrite(D0, HIGH); // red
+        ledRed(1);
       }
-#else
-      digitalWrite(D6, sec % 2); // green
 #endif
       
       // read data complete
@@ -426,9 +597,7 @@ void uradmonitor::callback_second(uint32_t sec) {
   } else {
     if (lastSensorVal == 0) {
       // blink while warmup, this goes every second, only if lastVal is null
-      digitalWrite(D6, sec % 2); // green
-      digitalWrite(D5, 0); // yellow
-      digitalWrite(D0, 0); // red
+      ledGreen(sec % 2); // green
     }
     // decrease warmup
     settings.warmup --;
@@ -439,7 +608,7 @@ void uradmonitor::callback_second(uint32_t sec) {
 
    
   // on SMOGGIE-PM, at sec 0 in every minute we do warmup to normalize PM sensor readings, after warmup we get actual data until sec 20 when we stop fan. FAN DUTY 33%  
-  #if DEV_CLASS == SMOGGIE_PM
+  #if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == SMOGGIE_PM_KIT
     #ifdef INCREASE_LIFESPAN
       
       if ((sec % 60) == 0) {

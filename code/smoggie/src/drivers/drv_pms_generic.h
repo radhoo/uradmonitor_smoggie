@@ -1,26 +1,15 @@
 /**
+ *	File:       	pms_generic.h
+ *	Version:  		1.0
+ *	Date:       	Jan 20, 2018 - OCT 17, 2020
+ *	Description:	Plantower PMS7003 / PMSA003 / PMS5003 / PMS1003 driver class
+ *	Project:		uRADMonitor AIR, part of Global environmental monitoring network
+ *	License:		Proprietary, all rights reserved. Unauthorized copying of this file, via any medium is strictly prohibited.
+ *  
+ *	Copyright 2013-2015 Radu Motisan, radu.motisan@gmail.com
+ *	Copyright 2015-2020 Magnasci SRL, www.magnasci.com
  *
- *  License:  GPL v3
- *  Project:  SMOGGIE is an ultra-low cost automated air quality monitor with a rain proof enclosure and a simple mount system to make installation easy. 
- *            It features a high quality laser scatering Particulate Matter sensor for PM1, PM2.5 and PM10 and an additional sensor for temperature, pressure and humidity. 
- *            It connects to the internet via Wifi and can be powered by a standard 5V micro-usb cable. Readings are accessed via the uRADMonitor API or decentralized via your local network. This monitor is lab tested for data accuracy.
- *
- *  Copyright 2013-2015 Radu Motisan, radu.motisan@gmail.com
- *  Copyright 2015-2021 Magnasci SRL, www.magnasci.com
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-**/
+ */
 
 #pragma once
 #include <stdint.h>
@@ -32,6 +21,9 @@ class PMS {
 	// pm in ug/m^3
 	uint16_t pm1ug_std, pm25ug_std, pm10ug_std,
 			pm1ug_atm, pm25ug_atm, pm10ug_atm;
+	uint16_t	pm03no, pm05no, pm1no, pm25no, pm5no, pm10no;	// 2B each
+
+
 public:
 	PMS() {
 		// instant value
@@ -42,6 +34,14 @@ public:
 		pm1ug_atm = 0;
 		pm25ug_atm = 0;
 		pm10ug_atm = 0;
+		// counts
+		pm03no = 0; 
+		pm05no = 0;
+		pm1no = 0; 
+		pm25no = 0;
+		pm5no = 0;
+		pm10no = 0;	// 2B each
+
 		index = 0;
 	}
 	uint8_t fusedata(char c);
@@ -54,4 +54,11 @@ public:
 	uint16_t getPM1();
 	uint16_t getPM25();
 	uint16_t getPM10();
+
+	uint16_t getPM03No() { return pm03no; }
+	uint16_t getPM05No() { return pm05no; }
+	uint16_t getPM1No() { return pm1no; }
+	uint16_t getPM25No() { return pm25no; }
+	uint16_t getPM5No() { return pm5no; }
+	uint16_t getPM10No() { return pm10no; }
 };

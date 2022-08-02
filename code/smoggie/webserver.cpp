@@ -1,27 +1,3 @@
-/**
- *
- *  License:  GPL v3
- *  Project:  SMOGGIE is an ultra-low cost automated air quality monitor with a rain proof enclosure and a simple mount system to make installation easy. 
- *            It features a high quality laser scatering Particulate Matter sensor for PM1, PM2.5 and PM10 and an additional sensor for temperature, pressure and humidity. 
- *            It connects to the internet via Wifi and can be powered by a standard 5V micro-usb cable. Readings are accessed via the uRADMonitor API or decentralized via your local network. This monitor is lab tested for data accuracy.
- *
- *  Copyright 2013-2015 Radu Motisan, radu.motisan@gmail.com
- *  Copyright 2015-2021 Magnasci SRL, www.magnasci.com
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-**/
- 
 #include "webserver.h"
 
 void Webserver::loop() {
@@ -32,7 +8,6 @@ void Webserver::init(uradmonitor *urad, char *buf, uint16_t len) {
   m_urad = urad;
   m_buf = buf;
   m_len = len;
-  
   // webserver
   server.on("/", std::bind(&Webserver::handleRoot, this));
   server.on("/j", std::bind(&Webserver::handleJSON , this));
@@ -43,17 +18,23 @@ void Webserver::init(uradmonitor *urad, char *buf, uint16_t len) {
 }
 
 
-// Build an HTML page to display on the web-server root address
+// Build an HTML page to display on the web-server root address`
 void Webserver::handleRoot() {
   snprintf(m_buf, m_len,
     "<html><head><meta http-equiv=\"refresh\" content=\"10\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>uRADMonitor</title></head>"
 #if DEV_CLASS == MODEL_A3    
     "<body><font face='courier'><br><br><center><h3><u>uRADMonitor <a href=\"https://www.uradmonitor.com/?open=%08lX\">MODEL A3 %08lX</a> - HW:%d SW:%d</u></h3><h4>%s - %s</h4>"
+#elif DEV_CLASS == SMOGGIE_RADON
+  "<body><font face='courier'><br><br><center><h3><u>uRADMonitor <a href=\"https://www.uradmonitor.com/?open=%08lX\">seeRADON %08lX</a> - HW:%d SW:%d</u></h3><h4>%s - %s</h4>"
 #else    
     "<body><font face='courier'><br><br><center><h3><u>uRADMonitor <a href=\"https://www.uradmonitor.com/?open=%08lX\">SMOGGIE %08lX</a> - HW:%d SW:%d</u></h3><h4>%s - %s</h4>"
 #endif    
-    "<table cellpadding='10px' style='margin-left: auto;margin-right: auto;overflow-x:auto;display:block;'><tr><td><b>Temperature:</b>%sC<br><b>Pressure:</b>%luPa<br><b>Humidity:</b>%sRH</td>"
-#if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3
+#if !(defined(USE_BME) || defined(USE_BMP))
+    "<table cellpadding='10px' style='margin-left: auto;margin-right: auto;overflow-x:auto;display:block;'><tr><td><b>Temperature:</b>%sC<br><b>Humidity:</b>%sRH</td>"
+#else    
+    "<table cellpadding='10px' style='margin-left: auto;margin-right: auto;overflow-x:auto;display:block;'><tr><td><b>Temperature:</b>%sC<br><b>Pressure:</b>%sPa<br><b>Humidity:</b>%sRH</td>"
+#endif    
+#if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3 || DEV_CLASS == SMOGGIE_PM_KIT
     "<td><b>PM1.0:</b>%uug/m^3<br><b>PM2.5:</b>%uug/m^3<br><b>PM10:</b>%uug/m^3</td>"
 #elif DEV_CLASS == SMOGGIE_CO2    
     "<td><b>CO2:</b>%uppm<br><br></td>"
@@ -66,14 +47,17 @@ void Webserver::handleRoot() {
 #endif    
     "<td><b>Time:</b>%lus<br><b>Interval:</b>%us<br><b>Stats:</b>%lu/%lu %u</td>"
     "<td><b>WIFI:</b>%s<br><b>IP:</b>%s<br><b>DNS:</b>%s</td></tr></table>"
-    "Warmup: %us | <a href=\"/j\">JSON</a> | <a href=\"/c\">CONFIG</a><br><br>"
+    "Warmup: %us | %s | <a href=\"/j\">JSON</a> | <a href=\"/c\">CONFIG</a><br><br>"
     "</body></html>",
       m_urad->getDeviceID(), m_urad->getDeviceID(), VER_HW, VER_SW, SENSOR_NAME, (m_urad->sensorState?"<span style=\"color:green;\">running</span>":"<span style=\"color:red;\">idle</span>"),
       
       String(m_urad->data.getTemperature(),2).c_str(), 
-      m_urad->data.getPressure(), 
+#if !(defined(USE_BME) || defined(USE_BMP))
+#else
+      String(m_urad->data.getPressure(),2).c_str(), 
+#endif      
       String(m_urad->data.getHumidity(),2).c_str(),  
-#if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3
+#if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3 || DEV_CLASS == SMOGGIE_PM_KIT
       m_urad->data.getPM1(), m_urad->data.getPM25(), m_urad->data.getPM10(), 
 #elif DEV_CLASS == SMOGGIE_CO2    
       m_urad->data.getCO2(),
@@ -88,13 +72,14 @@ void Webserver::handleRoot() {
     m_urad->isConnected()?"connected":"disconnected", 
     m_urad->getLocalIP(), 
     m_urad->getDNSIP(),
-    m_urad->settings.warmup);
+    m_urad->settings.warmup,
+    ((m_urad->data.valid == true)?"valid":"invalid"));
   /*// create chart
   snprintf(m_buf, m_len, "%s<div style=\"width:25%%\"><svg viewBox=\"0 0 600 300\" class=\"chart\"><polyline fill=\"none\" stroke=\"#0074d9\" stroke-width=\"1\" points=\"", m_buf);  
   for (uint8_t i = 0; i < CHART_POINTS; i++)
     snprintf(m_buf, m_len, "%s%u,%u ", m_buf, i * 20, m_urad->chart[i]);
   snprintf(m_buf, m_len, "%s\"/></svg></div><br>*/
-  snprintf(m_buf, m_len, "%s<font size=\"-2\"><a href=\"https://www.uradmonitor.com\">uRADMonitor</a>, a Magnasci SRL 2015-2021 project</font>", m_buf);  
+  snprintf(m_buf, m_len, "%s<font size=\"-2\"><a href=\"https://www.uradmonitor.com\">uRADMonitor</a>, a Magnasci SRL 2015-2022 project</font>", m_buf);  
 
   uint16_t cs = strlen(m_buf);
   snprintf(m_buf, m_len,"%s<br><br>%u</body></html>", m_buf, strlen(m_buf));
@@ -104,9 +89,16 @@ void Webserver::handleRoot() {
 
 void Webserver::handleJSON() {
   //data.buildJSON(m_buf, m_len,  deviceId,  DEV_CLASS, sec);
-  snprintf ( m_buf, m_len, "{\"data\":{\"id\":\"%08lX\",\"type\":\"%X\",\"temperature\":%s,\"humidity\":%s,\"pressure\":%lu,"
+  snprintf ( m_buf, m_len, "{\"data\":{\"id\":\"%08lX\",\"type\":\"%X\","
+#if !(defined(USE_BME) || defined(USE_BMP))
+  "\"temperature\":%s,\"humidity\":%s,"
+#else
+  "\"temperature\":%s,\"humidity\":%s,\"pressure\":%s,"
+#endif
 #if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3
   "\"pm1\":%u,\"pm25\":%u,\"pm10\":%u,"
+#elif DEV_CLASS == SMOGGIE_PM_KIT
+ "\"pm1\":%u,\"pm25\":%u,\"pm10\":%u,\"pm03no\":%u,\"pm05no\":%u,\"pm1no\":%u,\"pm25no\":%u,\"pm5no\":%u,\"pm10no\":%u,"
 #elif DEV_CLASS == SMOGGIE_CO2   
   "\"co2\":%u,"
 #elif DEV_CLASS == SMOGGIE_GAS
@@ -116,15 +108,27 @@ void Webserver::handleJSON() {
 #elif DEV_CLASS == MODEL_NOISE
   "\"nois\":%.1f,"
 #endif
-  "\"uptime\":%lu}}",
+  "\"valid\":%u,\"uptime\":%lu}}",
   m_urad->getDeviceID(), DEV_CLASS, 
-  String(m_urad->data.getTemperature(),2).c_str(), 
-  String(m_urad->data.getHumidity(),2).c_str(),  
-  m_urad->data.getPressure(), 
+#if !(defined(USE_BME) || defined(USE_BMP))
+  String(m_urad->data.getTemperature(),2).c_str(),  String(m_urad->data.getHumidity(),2).c_str(), 
+#else
+  String(m_urad->data.getTemperature(),2).c_str(),  String(m_urad->data.getHumidity(),2).c_str(),   String(m_urad->data.getPressure(),2).c_str(), 
+#endif  
 #if DEV_CLASS == SMOGGIE_PM || DEV_CLASS == MODEL_A3
     m_urad->data.getPM1(), 
     m_urad->data.getPM25(), 
     m_urad->data.getPM10(), 
+#elif DEV_CLASS == SMOGGIE_PM_KIT
+    m_urad->data.getPM1(), 
+    m_urad->data.getPM25(), 
+    m_urad->data.getPM10(), 
+    m_urad->data.getPM03No(), 
+    m_urad->data.getPM05No(), 
+    m_urad->data.getPM1No(), 
+    m_urad->data.getPM25No(), 
+    m_urad->data.getPM5No(), 
+    m_urad->data.getPM10No(), 
 #elif DEV_CLASS == SMOGGIE_CO2    
     m_urad->data.getCO2(),
 #elif DEV_CLASS == SMOGGIE_GAS  
@@ -135,7 +139,7 @@ void Webserver::handleJSON() {
 #elif DEV_CLASS == MODEL_NOISE
     m_urad->data.getNoise(),    
 #endif    
-  m_urad->sec);
+  m_urad->data.valid, m_urad->sec);
 
   server.send( 200, "text/html", m_buf);
 }
@@ -176,17 +180,27 @@ void Webserver::handleConfig() {
   snprintf(m_buf, m_len,"%s\
     </div>\
     Enter key: <input type=\"password\" placeholder=\"KEY?\" id=\"wifikey\" name=\"wifikey\" value=\"\">\
-    <br><br><b>uRADMonitor WiFi:</b> %s<br>\
+    <br><br><b>Sensor WiFi:</b> %s<br>\
     New key: <input type=\"text\" placeholder=\"type key\" id=\"ok1\" name=\"ok1\" value=\"%s\"><br>\
     Retype : <input type=\"text\" placeholder=\"type again\" id=\"ok2\" name=\"ok2\" value=\"%s\"><br>\
+    <br>",
+  m_buf,
+  m_urad->settings.ownssid,
+  m_urad->settings.ownkey, m_urad->settings.ownkey
+  );
+
+   snprintf(m_buf, m_len,"%s\
+    <br><b>Your User (<a href=\"http://www.uradmonitor.com/dashboard\">?</a>):</b><br>\
+    User-id: <input type=\"text\" placeholder=\"type key\" id=\"userid\" name=\"userid\" value=\"%s\"><br>\
+    User-key : <input type=\"text\" placeholder=\"type again\" id=\"userkey\" name=\"userkey\" value=\"%s\"><br>\
     <br><br><button>Save</button>\
     <button type=\"submit\" formaction=\"/\">Back</button>\
     </form>\
   </font></body>\
   </html>",
   m_buf,
-  m_urad->settings.ownssid,
-  m_urad->settings.ownkey, m_urad->settings.ownkey
+  m_urad->settings.userid,
+  m_urad->settings.userkey
   );
     
   server.send( 200, "text/html", m_buf);
@@ -215,6 +229,8 @@ void Webserver::handleSave() {
   strncpy(m_urad->settings.ssid, server.arg("ssid").c_str(), 64);
   strncpy(m_urad->settings.key, server.arg("wifikey").c_str(), 64);
   strncpy(m_urad->settings.ownkey, server.arg("ok1").c_str(), 64);
+  strncpy(m_urad->settings.userid, server.arg("userid").c_str(), 64);
+  strncpy(m_urad->settings.userkey, server.arg("userkey").c_str(), 64);
      
   // commit to EEPROM
   m_urad->saveSettings();

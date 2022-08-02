@@ -1,27 +1,4 @@
-/**
- *
- *  License:  GPL v3
- *  Project:  SMOGGIE is an ultra-low cost automated air quality monitor with a rain proof enclosure and a simple mount system to make installation easy. 
- *            It features a high quality laser scatering Particulate Matter sensor for PM1, PM2.5 and PM10 and an additional sensor for temperature, pressure and humidity. 
- *            It connects to the internet via Wifi and can be powered by a standard 5V micro-usb cable. Readings are accessed via the uRADMonitor API or decentralized via your local network. This monitor is lab tested for data accuracy.
- *
- *  Copyright 2013-2015 Radu Motisan, radu.motisan@gmail.com
- *  Copyright 2015-2021 Magnasci SRL, www.magnasci.com
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-**/
-
+/* Create a WiFi access point and provide a web server on it. */
 // FW006 - current
 #include "uradmonitor.h"
 #include "webserver.h"
@@ -39,10 +16,19 @@ void sendFunc() {
 
 void setup() {
   Serial.begin(9600);
-
+  
   urad.init(buffer, BUFFER_SIZE, &sendFunc);
   // configure globals
+#if DEV_CLASS == SMOGGIE_PM_KIT
+  byte mac[6];  
+  WiFi.macAddress(mac);
+  urad.setDeviceID(((uint32_t)DEV_CLASS << 24) | ((uint32_t)mac[3] << 16) | ((uint32_t)mac[4] << 8) | ((uint32_t)mac[5]));
+  #ifdef DEBUG
+    Serial.printf("Device ID: %08lX\n", urad.getDeviceID());
+  #endif  
+#else
   urad.setDeviceID(((uint32_t)DEV_CLASS << 24) | ((uint32_t)DEFAULT_DEV_NUMBER & 0x00FFFFFF));
+#endif
   // goes before initnetwork
   urad.loadSettings();
   
@@ -50,16 +36,19 @@ void setup() {
   urad.initSensors();
 
   urad.initNetwork();  
+
   
   // init webserver
   web.init(&urad, buffer, BUFFER_SIZE);
 
   // init client
   client.init(&urad, buffer, BUFFER_SIZE);
+ 
 }
+
 
 
 void loop() {
   urad.loop() ;
-  web.loop();
+  web.loop(); 
 }

@@ -1,31 +1,3 @@
-/**
- *
- * License:  GPL v3
- * Project:  SMOGGIE is an ultra-low cost automated air quality monitor with a rain proof enclosure and a simple mount system to make installation easy. 
- *           It features a high quality laser scatering Particulate Matter sensor for PM1, PM2.5 and PM10 and an additional sensor for temperature, pressure and humidity. 
- *           It connects to the internet via Wifi and can be powered by a standard 5V micro-usb cable. Readings are accessed via the uRADMonitor API or decentralized via your local network. This monitor is lab tested for data accuracy.
- *
- * Copyright 2013-2015 Radu Motisan, radu.motisan@gmail.com
- * Copyright 2015-2021 Magnasci SRL, www.magnasci.com
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
-**/
-
-
-// TODO : This file should be customised to send the data to your end point. A new release on Github will implement the uRADMonitor DIDAP: device with no allocated ID - Dynamic ID Allocation Protocol.
-// Note: DIDAP is already on Github in the uRADMonitor KIT1 repo.
-
 #include "data_client.h"
 #include <Arduino.h>
 
@@ -37,5 +9,42 @@ void DataClient::init(uradmonitor *urad, char *buf, uint16_t len) {
 
 // HTTP Post to uRADMonitor server
 bool DataClient::sendData() {
-  
+  //Serial.println("sending");
+  // prepare data
+  m_urad->data.packData(m_urad->settings.flag_encrypt, m_buf, m_len, m_urad->getDeviceID(), m_urad->sec, VER_HW, VER_SW);
+  //Serial.printf("Prep send [%s][did:%08lX]\n", m_buf, m_urad->getDeviceID());
+  // send it via EX protocol
+  if ( client.connect(m_urad->settings.server, 80)) {
+    // build HTTP packet
+    client.print("POST "); client.print(m_urad->settings.script); client.print("/");       
+    client.print(m_buf); client.println(" HTTP/1.1");
+    client.print("Host: "); client.println(m_urad->settings.server);
+    client.println("Accept: */*");
+    client.println("Content-Length: 0");
+    client.printf("X-User-id: %s\r\n", m_urad->settings.userid);
+    client.printf("X-User-hash: %s\r\n", m_urad->settings.userkey);
+    client.printf("X-Device-id: %08lX\r\n", m_urad->getDeviceID());
+    client.println("Content-Type: text/plain");
+    client.println("Connection: close");
+    client.println();
+    
+    // read answer
+    int n = 0;
+    char value[20] = {0};
+    uint16_t code = 0;
+    while (n = client.readBytesUntil('\n', m_buf, m_len - 1))  {
+      m_buf[n] = 0;
+      if (find(m_buf, "HTTP/", " ", " ", value, 20))
+        code = atoi(value);
+       //Serial.printf("(%s)[%s]\n", value, m_buf);
+      if (strchr(m_buf, '{') && strchr(m_buf, '}'))
+        m_urad->callback_answer(code, m_buf);          
+    }
+    
+    client.stop();  
+    return true;    
+  } else {
+    //Serial.println("can't connect");
+    return false;
+  }
 }
